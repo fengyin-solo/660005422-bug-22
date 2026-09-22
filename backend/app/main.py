@@ -1,7 +1,7 @@
-import re, math, time, random
+import asyncio, json, re, math, time, random
 import numpy as np
 from collections import defaultdict, Counter
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -81,20 +81,37 @@ def generate_logs(req: GenerateRequest):
     logs = []
     for i in range(req.count):
         entry = tmpl["generator"]()
-        logs.append({
-            "id": i + 1,
-            "timestamp": entry["timestamp"],
-            "level": entry["level"],
-            "source": entry["source"],
-            "message": entry["message"],
-            "raw": f"[{entry['timestamp']}] [{entry['level']}] [{entry['source']}] {entry['message']}"
-        })
+        logs.append(build_log_entry(i + 1, entry))
     return analyze_logs(logs, [], "")
 
 
 @app.post("/api/detect")
 def detect_anomalies(req: DetectRequest):
     return analyze_logs(req.logs, req.rules, req.query)
+
+
+def build_log_entry(log_id: int, entry: dict):
+    return {
+        "id": log_id,
+        "timestamp": entry["timestamp"],
+        "level": entry["level"],
+        "source": entry["source"],
+        "message": entry["message"],
+        "raw": f"[{entry['timestamp']}] [{entry['level']}] [{entry['source']}] {entry['message']}"
+    }
+
+
+@app.websocket("/ws/stream")
+async def stream_logs(websocket: WebSocket, type: str = "nginx"):
+    await websocket.accept()
+    tmpl = LOG_TEMPLATES.get(type, LOG_TEMPLATES["nginx"])
+    try:
+        while True:
+            entry = tmpl["generator"]()
+            await websocket.send_text(json.dumps(build_log_entry(0, entry), ensure_ascii=False))
+            await asyncio.sleep(0.25)
+    except WebSocketDisconnect:
+        return
 
 
 def analyze_logs(logs_data, rules, query):

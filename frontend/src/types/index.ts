@@ -4,3 +4,5 @@ export interface AnomalyScore { windowIndex: number; sigmaScore: number; iqrScor
 export interface AlertRule { id: number; name: string; type: string; threshold: number; enabled: boolean }
 export interface Alert { id: number; ruleName: string; severity: string; message: string; timestamp: string }
 export interface AnalysisResult { logs: LogEntry[]; windows: TimeWindow[]; anomalies: AnomalyScore[]; alerts: Alert[]; totalLogs: number }
+export type IntervalKey = '1m' | '5m' | '15m'
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'

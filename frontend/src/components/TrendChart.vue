@@ -17,7 +17,7 @@ function update() {
       type:'bar',data:ws.map(w=>w.count),itemStyle:{color:'#38bdf8'},
       markLine:{data:[{type:'average',name:'avg'}],lineStyle:{color:'#f97316',type:'dashed'},label:{color:'#f97316'}}
     }],animation:false
-  })
+  }, true)
 }
 onMounted(()=>{if(chart.value){inst=echarts.init(chart.value);update()}})
 watch(()=>store.result,update)

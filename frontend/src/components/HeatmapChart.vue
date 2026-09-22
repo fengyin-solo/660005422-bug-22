@@ -17,7 +17,7 @@ function update() {
     yAxis:{type:'category',data:levels,axisLabel:{color:'#94a3b8',fontSize:9}},
     visualMap:{min:0,max:Math.max(...data.map(d=>d[2]),1),inRange:{color:['#1e293b','#fef08a','#ef4444']},calculable:false,show:false},
     series:[{type:'heatmap',data,label:{show:true,fontSize:8,color:'#94a3b8'}}],animation:false
-  })
+  }, true)
 }
 onMounted(()=>{if(chart.value){inst=echarts.init(chart.value);update()}})
 watch(()=>store.result,update)

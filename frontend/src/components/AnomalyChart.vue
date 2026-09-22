@@ -17,7 +17,7 @@ function update() {
       {type:'line',data:anoms.map(a=>a.sigmaScore),name:'3-sigma',itemStyle:{color:'#f97316'},lineStyle:{width:1.5}},
       {type:'line',data:anoms.map(a=>a.iqrScore),name:'IQR',itemStyle:{color:'#a78bfa'},lineStyle:{width:1.5}}
     ],animation:false,legend:{right:0,textStyle:{color:'#94a3b8',fontSize:10}}
-  })
+  }, true)
 }
 onMounted(()=>{if(chart.value){inst=echarts.init(chart.value);update()}})
 watch(()=>store.result,update)
