@@ -4,3 +4,12 @@ export interface AnomalyScore { windowIndex: number; sigmaScore: number; iqrScor
 export interface AlertRule { id: number; name: string; type: string; threshold: number; enabled: boolean }
 export interface Alert { id: number; ruleName: string; severity: string; message: string; timestamp: string }
 export interface AnalysisResult { logs: LogEntry[]; windows: TimeWindow[]; anomalies: AnomalyScore[]; alerts: Alert[]; totalLogs: number }
+
+export type StreamConnState = 'connecting' | 'connected' | 'disconnected'
+export interface ScoreWindow {
+  windowIndex: number
+  timestamp: string
+  count: number
+  sigmaScore: number
+  iqrScore: number
+}

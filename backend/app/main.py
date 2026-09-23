@@ -1,7 +1,7 @@
-import re, math, time, random
+import re, math, time, random, asyncio
 import numpy as np
 from collections import defaultdict, Counter
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -185,3 +185,88 @@ def analyze_logs(logs_data, rules, query):
         "alerts": alerts[:20],
         "totalLogs": n
     }
+
+
+# ---------------------------------------------------------------------------
+# 实时异常分数流：每个连接持有独立的一份窗口数据，区间/来源变更时前端重连，
+# 后端在 accept 时以全新窗口缓冲作为快照下发，保证客户端不会残留上一段数据。
+# ---------------------------------------------------------------------------
+
+STREAM_SOURCES = ["nginx", "apache", "json_app", "custom"]
+STREAM_INTERVAL_SECONDS = {"1m": 1.0, "5m": 2.0, "15m": 3.0}
+STREAM_BUFFER = 60
+
+
+def score_windows(windows: list) -> list:
+    """与 analyze_logs 一致的 3-sigma / IQR 打分，直接写回同一份窗口列表。"""
+    counts = [w["count"] for w in windows]
+    if not counts:
+        return windows
+    mean = float(np.mean(counts))
+    std = float(np.std(counts)) if len(counts) > 1 else 1.0
+    if len(counts) > 3:
+        q1 = float(np.percentile(counts, 25))
+        q3 = float(np.percentile(counts, 75))
+    else:
+        q1, q3 = mean - std, mean + std
+    iqr = q3 - q1 if q3 > q1 else 1.0
+    for w in windows:
+        sigma = abs(w["count"] - mean) / max(std, 1e-5)
+        iqr_score = 0.0
+        if w["count"] < q1 - 1.5 * iqr or w["count"] > q3 + 1.5 * iqr:
+            iqr_score = min(10.0, abs(w["count"] - mean) / max(iqr, 1e-5))
+        w["sigmaScore"] = round(float(sigma), 2)
+        w["iqrScore"] = round(float(iqr_score), 2)
+    return windows
+
+
+@app.websocket("/ws/stream")
+async def stream_scores(ws: WebSocket):
+    await ws.accept()
+    try:
+        params = ws.query_params
+        source = params.get("source", "nginx")
+        interval = params.get("interval", "1m")
+        if source not in STREAM_SOURCES:
+            source = "nginx"
+        step = STREAM_INTERVAL_SECONDS.get(interval, 1.0)
+
+        # 新连接 = 全新窗口缓冲，快照即这一份数据，与后续增量完全同源
+        windows: list = []
+        for i in range(20):
+            windows.append({
+                "windowIndex": i,
+                "count": 20 + random.randint(0, 5),
+                "sigmaScore": 0.0,
+                "iqrScore": 0.0,
+                "timestamp": time.strftime("%H:%M:%S", time.localtime(time.time() - (20 - i) * step)),
+            })
+        next_index = len(windows)
+        score_windows(windows)
+        await ws.send_json({"type": "snapshot", "source": source, "interval": interval, "windows": windows})
+
+        period = 60 if interval == "1m" else 300 if interval == "5m" else 900
+        while True:
+            await asyncio.sleep(step)
+            count = 20 + random.randint(0, 5)
+            if random.random() < 0.12:
+                count += random.randint(10, 25)
+            window = {
+                "windowIndex": next_index,
+                "count": count,
+                "sigmaScore": 0.0,
+                "iqrScore": 0.0,
+                "timestamp": time.strftime("%H:%M:%S"),
+            }
+            next_index += 1
+            windows.append(window)
+            if len(windows) > STREAM_BUFFER:
+                windows = windows[-STREAM_BUFFER:]
+            score_windows(windows)
+            # 只下发当前窗口，分数来自与快照相同的 windows 缓冲
+            await ws.send_json({"type": "window", "window": windows[-1]})
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        # 客户端断开或中途取消时静默退出，避免服务任务抛错
+        pass
